@@ -12,11 +12,14 @@
 # é pessoal. Eles ficam em downloads/ (fora do git) e só entram no .flatpak.
 #
 # Uso:
-#   ./criar-flatpak.sh                 mostra um menu com as opções (num terminal)
+#   ./criar-flatpak.sh                 mostra um menu com as opções (num terminal);
+#                                      na primeira vez (sem o setup ou o registro em
+#                                      downloads/) pede o setup, o nome e o serial antes
 #   ./criar-flatpak.sh --completo      compila, instala (--user) e gera o .flatpak
 #   ./criar-flatpak.sh --setup <arquivo.exe>
-#                                      usa este setup (copiado para downloads/);
-#                                      sem ele, usa o mais novo de downloads/
+#                                      usa este setup (copiado para downloads/ e
+#                                      lembrado); sem ele, usa o último escolhido
+#                                      (ou o de versão mais alta de downloads/)
 #   ./criar-flatpak.sh --nome <nome> --serial <serial>
 #                                      registro do SQLyog (guardado em
 #                                      downloads/registro.txt para as próximas vezes)
@@ -98,12 +101,101 @@ if [ "${1:-}" = --instalar ]; then
     instalar_bundle "${2:+$(absoluto "$2")}"
 fi
 
+# Setup e registro ficam em downloads/ (fora do git): o setup copiado, o nome
+# dele em setup.txt (o escolhido por último) e o nome/serial em registro.txt
+REGISTRO_TXT=downloads/registro.txt
+SETUP_TXT=downloads/setup.txt
+setup_atual() {  # o escolhido por último, senão o de versão mais alta
+    local s
+    if s=$(cat "$SETUP_TXT" 2>/dev/null) && [ -f "downloads/$s" ]; then
+        echo "downloads/$s"
+        return
+    fi
+    find downloads -maxdepth 1 -iname 'SQLyog*Setup*.exe' -printf '%p\n' 2>/dev/null | sort -V | tail -1
+}
+usar_setup() {  # usar_setup <arquivo>: confere, copia para downloads/ e lembra
+    [ -f "$1" ] || { echo "   setup não encontrado: $1" >&2; return 1; }
+    file -b "$1" | grep -q 'Nullsoft Installer' ||
+        { echo "   não parece um setup do SQLyog (instalador NSIS): $1" >&2; return 1; }
+    mkdir -p downloads
+    cmp -s "$1" "downloads/$(basename "$1")" || cp "$1" downloads/
+    basename "$1" > "$SETUP_TXT"
+}
+salvar_registro() {  # salvar_registro <nome> <serial>
+    mkdir -p downloads
+    (umask 077 && printf 'nome=%s\nserial=%s\n' "$1" "$2" > "$REGISTRO_TXT")
+}
+nome_registrado() {
+    sed -n 's/^nome=//p' "$REGISTRO_TXT" 2>/dev/null
+}
+# Pergunta um caminho. Aceita o arquivo arrastado para o terminal (entre
+# aspas ou como file://...) e ~/.
+ler_caminho() {  # ler_caminho <pergunta>
+    local p
+    read -rp "$1" p
+    p=$(printf '%s' "$p" | python3 -I -c '
+import sys, urllib.parse
+p = sys.stdin.read().strip()
+if len(p) > 1 and p[0] == p[-1] and p[0] in "\x27\"":
+    p = p[1:-1]
+if p.startswith("file://"):
+    p = urllib.parse.unquote(p[7:])
+print(p)')
+    case $p in "~/"*) p=$HOME/${p#"~/"} ;; esac
+    [ -z "$p" ] || absoluto "$p"
+}
+pedir_setup() {  # pedir_setup <opcional 0|1>: com 1, Enter mantém o atual
+    local p
+    while :; do
+        p=$(ler_caminho "   Caminho do setup (SQLyog <versão>_Setup_x64.exe)$([ "$1" = 1 ] && echo ', Enter mantém o atual'): ")
+        if [ -z "$p" ]; then
+            [ "$1" = 1 ] && return 0
+            continue
+        fi
+        usar_setup "$p" && return 0
+    done
+}
+pedir_registro() {  # pedir_registro <opcional 0|1>: com 1, Enter mantém o atual
+    local nome serial
+    while :; do
+        read -rp "   Nome de registro$([ "$1" = 1 ] && echo ' (Enter mantém o atual)'): " nome
+        [ -n "$nome" ] || { [ "$1" = 1 ] && return 0; continue; }
+        local LC_ALL=C; [[ $nome = *[![:print:]]* ]] && { echo "   use só caracteres ASCII" >&2; continue; }
+        break
+    done
+    while :; do
+        read -rp "   Serial: " serial
+        serial=$(echo "$serial" | tr -d '[:space:]')
+        [ -n "$serial" ] || continue
+        [[ $serial = *[![:print:]]* ]] && { echo "   use só caracteres ASCII" >&2; continue; }
+        break
+    done
+    salvar_registro "$nome" "$serial"
+}
+
 # Sem argumentos, num terminal: menu. Fora de um terminal: faz o completo.
 if [ $# -eq 0 ] && [ -t 0 ]; then
-    cat <<'MENU'
+    # Primeira vez (ex.: outro PC, depois do git clone): pede o que falta
+    if [ -z "$(setup_atual)" ] || [ ! -f "$REGISTRO_TXT" ]; then
+        echo
+        echo "  SQLyog - primeira configuração"
+        echo "  =============================="
+        echo "  O setup e o registro não vêm com o código; eles ficam guardados em"
+        echo "  downloads/ (fora do git) e não são pedidos de novo."
+        echo
+        [ -n "$(setup_atual)" ] || pedir_setup 0
+        [ -f "$REGISTRO_TXT" ] || pedir_registro 0
+    fi
+    cat <<MENU
 
   SQLyog - criar Flatpak
   ======================
+
+  Tudo disponível:
+    setup:    $(basename "$(setup_atual)")
+    registro: em nome de "$(nome_registrado)"
+MENU
+    cat <<'MENU'
 
   1) Completo
      Instala o setup de downloads/ num prefixo temporário, compila, instala
@@ -136,6 +228,10 @@ if [ $# -eq 0 ] && [ -t 0 ]; then
      Instala o SQLyog-<versão>-full.flatpak mais novo desta pasta, sem
      compilar. Use em outro PC (precisa só do flatpak).
 
+  8) Trocar o setup ou o registro
+     Para gerar outra versão (setup novo) ou mudar o nome e o serial.
+     Enter mantém o atual; depois volta a este menu.
+
   0) Sair
 
 MENU
@@ -148,6 +244,7 @@ MENU
         5) PUBLICAR=1 ;;
         6) PUBLICAR=1 SO_CODIGO=1 ;;
         7) instalar_bundle ;;
+        8) echo; pedir_setup 1; pedir_registro 1; exec "$0" ;;
         0) exit 0 ;;
         *) echo "opção inválida: $opcao" >&2; exit 1 ;;
     esac
@@ -257,34 +354,23 @@ fi
 # 1. Setup do SQLyog (fornecido pelo usuário) e registro
 # ---------------------------------------------------------------------------
 mkdir -p downloads
-if [ -n "$SETUP_ARG" ]; then
-    [ -f "$SETUP_ARG" ] || { echo "setup não encontrado: $SETUP_ARG" >&2; exit 1; }
-    file -b "$SETUP_ARG" | grep -q 'Nullsoft Installer' ||
-        { echo "não parece um setup do SQLyog (instalador NSIS): $SETUP_ARG" >&2; exit 1; }
-    cmp -s "$SETUP_ARG" "downloads/$(basename "$SETUP_ARG")" ||
-        cp "$SETUP_ARG" downloads/
-    SETUP=downloads/$(basename "$SETUP_ARG")
-else
-    SETUP=$(find downloads -maxdepth 1 -iname 'SQLyog*Setup*x64*.exe' -printf '%p\n' | sort -V | tail -1)
-    [ -n "$SETUP" ] || { echo "nenhum setup do SQLyog em downloads/; use --setup <arquivo.exe>" >&2; exit 1; }
-fi
+[ -z "$SETUP_ARG" ] || usar_setup "$SETUP_ARG" || exit 1
+SETUP=$(setup_atual)
+[ -n "$SETUP" ] || { echo "nenhum setup do SQLyog em downloads/; use --setup <arquivo.exe>" >&2; exit 1; }
 echo ">> Setup: $SETUP"
 SETUP_SHA=$(sha256sum "$SETUP" | cut -d' ' -f1)
 
 # Registro: nome e serial ficam em downloads/registro.txt (fora do git)
-REGISTRO_TXT=downloads/registro.txt
 if [ -n "$NOME_ARG$SERIAL_ARG" ]; then
     [ -n "$NOME_ARG" ] && [ -n "$SERIAL_ARG" ] ||
         { echo "--nome e --serial precisam vir juntos" >&2; exit 1; }
-    printf 'nome=%s\nserial=%s\n' "$NOME_ARG" "$SERIAL_ARG" > "$REGISTRO_TXT"
-    chmod 600 "$REGISTRO_TXT"
+    salvar_registro "$NOME_ARG" "$SERIAL_ARG"
 elif [ ! -f "$REGISTRO_TXT" ] && [ $SEM_REGISTRO = 0 ] && [ $GERAR_SO = 0 ] && [ -t 0 ]; then
     echo "   Registro do SQLyog (Enter em branco: sem registro, versão de avaliação)"
     read -rp "   Nome de registro: " NOME_ARG
     if [ -n "$NOME_ARG" ]; then
         read -rp "   Serial: " SERIAL_ARG
-        printf 'nome=%s\nserial=%s\n' "$NOME_ARG" "$SERIAL_ARG" > "$REGISTRO_TXT"
-        chmod 600 "$REGISTRO_TXT"
+        salvar_registro "$NOME_ARG" "$SERIAL_ARG"
     fi
 fi
 REGISTRO_REG=""
@@ -305,7 +391,7 @@ print(f'"Name"=hex:{cod(campos["nome"])}')
 print(f'"InE"=hex:{cod(campos["serial"].strip())}')
 print('"x64"=dword:00000001')
 EOF
-    echo "   registrado em nome de \"$(sed -n 's/^nome=//p' "$REGISTRO_TXT")\""
+    echo "   registrado em nome de \"$(nome_registrado)\""
 else
     echo "   sem registro (versão de avaliação)"
 fi

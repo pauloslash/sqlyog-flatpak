@@ -23,7 +23,7 @@ Precisa no sistema: `flatpak` (com o remote flathub), `curl`, `7z`, `file` e
 # primeira vez: o setup e o registro (guardados em downloads/, fora do git)
 ./criar-flatpak.sh --setup "SQLyog 13.1.1.24_Setup_x64.exe" --nome "<nome>" --serial "<serial>"
 
-./criar-flatpak.sh                   # menu com as opções abaixo, explicadas
+./criar-flatpak.sh                   # menu (na primeira vez pede setup, nome e serial antes)
 ./criar-flatpak.sh --completo        # compila, instala (--user) e gera o .flatpak
 ./criar-flatpak.sh --so-gerar        # só gera os arquivos
 ./criar-flatpak.sh --sem-instalar    # compila sem instalar
@@ -35,10 +35,18 @@ Precisa no sistema: `flatpak` (com o remote flathub), `curl`, `7z`, `file` e
 flatpak run com.webyog.SQLyog
 ```
 
-Depois da primeira vez, o setup (o mais novo de `downloads/`) e o registro
-(`downloads/registro.txt`) são reaproveitados. Sem `--nome`/`--serial` e sem
-o `registro.txt`, o script pergunta (num terminal); em branco, compila sem
-registro e o arquivo sai sem o `-full` no nome.
+Sem argumentos, na primeira vez (ex.: em outro PC, logo depois do `git
+clone`), o script pede o caminho do setup (pode arrastar o arquivo para o
+terminal), o nome e o serial, e só depois mostra o menu. Nas próximas vezes o
+menu abre direto, com "Tudo disponível" e o setup e o nome em uso; a opção 8
+troca o setup (para gerar outra versão) ou o registro (Enter mantém o atual).
+
+Tudo fica em `downloads/` (fora do git): o setup copiado, o nome dele em
+`setup.txt` (o escolhido por último; sem ele, vale o de versão mais alta) e
+o nome/serial em `registro.txt`. Com argumentos, `--setup` e
+`--nome`/`--serial` fazem o mesmo; sem o `registro.txt`, o script pergunta (num
+terminal) e, em branco, compila sem registro e o arquivo sai sem o `-full`
+no nome.
 
 Para instalar em outro PC, copie o `SQLyog-<versão>-full.flatpak` junto com o
 `criar-flatpak.sh` e rode `./criar-flatpak.sh --instalar` lá (precisa só do
