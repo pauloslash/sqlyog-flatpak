@@ -1,0 +1,14 @@
+# Setup, serial, fontes e resultados do build (nada disso vai para o git:
+# o SQLyog é proprietário e o serial é pessoal)
+downloads/
+build-dir/
+repo/
+.flatpak-builder/
+*.flatpak
+
+# Gerados por criar-flatpak.sh (o script é a fonte de tudo)
+com.webyog.SQLyog.yml
+com.webyog.SQLyog.desktop
+com.webyog.SQLyog.metainfo.xml
+icons/
+scripts/
