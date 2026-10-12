@@ -123,8 +123,9 @@ if [ $# -eq 0 ] && [ -t 0 ]; then
 
   5) Publicar no GitHub
      Igual ao completo e depois publica: o release do código (só o
-     código, sem o SQLyog) e o .flatpak -full em rascunho privado
-     (substituem os anteriores).
+     código, sem o SQLyog, substitui o anterior) e o .flatpak -full em
+     rascunho privado (substitui só o rascunho da mesma versão; os de
+     outras versões ficam).
      Precisa do gh logado e de tudo commitado e enviado (push).
 
   6) Publicar só o código no GitHub
@@ -185,7 +186,8 @@ trap 'rm -rf "$TMP"' EXIT
 #   - flatpak: o código (o "latest"), sem anexo: sem o setup não há app. Tag
 #     fixa, apagada e recriada a cada publicação;
 #   - flatpak-full-<versão>: rascunho privado com o -full, que contém o
-#     SQLyog (proprietário) e o serial.
+#     SQLyog (proprietário) e o serial. Um por versão: só o da mesma versão
+#     é substituído; os de outras versões ficam.
 # ---------------------------------------------------------------------------
 if [ $PUBLICAR = 1 ]; then
     for c in git gh; do
@@ -210,12 +212,14 @@ tipo_release() {  # tipo_release <tag>: codigo, full ou outro
         *) echo outro ;;
     esac
 }
-# Apaga os releases (de qualquer versão) do tipo passado
+# apagar_releases <tipo> [tag]: apaga os releases do tipo (de qualquer
+# versão) ou, com a tag, só o daquela tag
 apagar_releases() {
-    echo ">> Apagando os releases antigos ($1)"
+    echo ">> Apagando os releases antigos ($1${2:+: $2})"
     gh release list --limit 1000 --json tagName,isDraft -q '.[] | "\(.tagName) \(.isDraft)"' |
         while read -r tag rascunho; do
             [ "$(tipo_release "$tag")" = "$1" ] || continue
+            [ -z "${2:-}" ] || [ "$tag" = "$2" ] || continue
             echo "   $tag"
             if [ "$rascunho" = true ]; then  # rascunho não tem tag
                 gh release delete "$tag" --yes </dev/null
@@ -705,7 +709,8 @@ fi
 
 if [ $PUBLICAR = 1 ]; then
     SHA=$(sha256sum "$ARQ" | cut -d' ' -f1)
-    apagar_releases full
+    # Só o rascunho desta versão: os de outras versões continuam disponíveis
+    apagar_releases full "flatpak-full-$VERSAO"
     # Contém o SQLyog (proprietário) e o serial: só em rascunho (visível para
     # quem tem acesso de escrita ao repositório)
     sed -e "s|@VERSAO@|$VERSAO|g" -e "s|@COMMIT@|${COMMIT:0:7}|g" -e "s|@SHA@|$SHA|g" \

@@ -81,8 +81,11 @@ como `Z:\home\...` (o `/` é o drive `Z:`). O app tem acesso à home inteira
   que contém o SQLyog e o serial (só quem tem acesso de escrita ao
   repositório vê).
 
-Os dois são recriados a cada publicação, e os releases antigos do mesmo tipo
-são apagados (com as tags). `--publicar-codigo` (opção 6) recria só o release
+O release do código é recriado a cada publicação (o anterior é apagado, com a
+tag). Os rascunhos ficam um por versão: publicar de novo a mesma versão
+substitui o rascunho dela, e os de outras versões continuam lá (apague à mão
+os que não quiser mais, com `gh release delete flatpak-full-<versão>`).
+`--publicar-codigo` (opção 6) recria só o release
 do código, sem compilar e sem tocar no rascunho. Exige tudo commitado e o
 commit atual no GitHub (push), e confere isso antes de compilar.
 
